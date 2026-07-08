@@ -1,11 +1,19 @@
 const express = require('express')
 const cors = require('cors')
 const https = require('https')
+const http = require('http')
+const { Server } = require('socket.io')
+
 const app = express()
 app.use(cors())
 app.use(express.json())
+
+const server = http.createServer(app)
+const io = new Server(server, { cors: { origin: '*' } })
+
 const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN
 const FRONTEND_URL = process.env.FRONTEND_URL
+
 app.post('/criar-pagamento', async (req, res) => {
   try {
     const { item, preco, tipo, gems, pkg_id, item_id } = req.body
@@ -18,5 +26,70 @@ app.post('/criar-pagamento', async (req, res) => {
     mpReq.end()
   } catch(e) { res.status(500).json({ erro: e.message }) }
 })
+
 app.get('/', (req, res) => res.json({ status: 'OK' }))
-app.listen(process.env.PORT || 3000)
+
+// ===== SISTEMA DE SALAS (MULTIPLAYER) =====
+const salas = {}
+
+function gerarCodigo() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let codigo = ''
+  for (let i = 0; i < 5; i++) codigo += chars[Math.floor(Math.random() * chars.length)]
+  return codigo
+}
+
+io.on('connection', (socket) => {
+  socket.on('criar-sala', (dados) => {
+    const { senha, maxJogadores, modo, nomeCriador } = dados
+    let codigo = gerarCodigo()
+    while (salas[codigo]) codigo = gerarCodigo()
+
+    salas[codigo] = {
+      senha: senha,
+      maxJogadores: maxJogadores,
+      modo: modo,
+      jogadores: [{ id: socket.id, nome: nomeCriador }]
+    }
+
+    socket.join(codigo)
+    socket.data.sala = codigo
+    socket.emit('sala-criada', { codigo, maxJogadores, modo })
+  })
+
+  socket.on('entrar-sala', (dados) => {
+    const { codigo, senha, nomeJogador } = dados
+    const sala = salas[codigo]
+
+    if (!sala) {
+      socket.emit('erro-entrar', { motivo: 'Sala não encontrada' })
+      return
+    }
+    if (sala.senha !== senha) {
+      socket.emit('erro-entrar', { motivo: 'Senha incorreta' })
+      return
+    }
+    if (sala.jogadores.length >= sala.maxJogadores) {
+      socket.emit('erro-entrar', { motivo: 'Sala cheia' })
+      return
+    }
+
+    sala.jogadores.push({ id: socket.id, nome: nomeJogador })
+    socket.join(codigo)
+    socket.data.sala = codigo
+
+    socket.emit('entrou-na-sala', { codigo, modo: sala.modo })
+    io.to(codigo).emit('lista-jogadores', sala.jogadores)
+  })
+
+  socket.on('disconnect', () => {
+    const codigo = socket.data.sala
+    if (codigo && salas[codigo]) {
+      salas[codigo].jogadores = salas[codigo].jogadores.filter(j => j.id !== socket.id)
+      io.to(codigo).emit('lista-jogadores', salas[codigo].jogadores)
+      if (salas[codigo].jogadores.length === 0) delete salas[codigo]
+    }
+  })
+})
+
+server.listen(process.env.PORT || 3000)
