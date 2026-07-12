@@ -94,9 +94,9 @@ io.on('connection', (socket) => {
 
   // Um jogador se moveu - repassa a posição pros outros da mesma sala
   socket.on('jogador-moveu', (dados) => {
-    const { codigo, x, y, dir, nome } = dados
+    const { codigo, x, y, dir, nome, skinIndex } = dados
     if (socket.data.sala !== codigo) return
-    socket.to(codigo).emit('jogador-moveu', { id: socket.id, x, y, dir, nome })
+    socket.to(codigo).emit('jogador-moveu', { id: socket.id, x, y, dir, nome, skinIndex })
   })
 
   socket.on('entrar-sala', (dados) => {
