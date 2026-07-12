@@ -70,6 +70,35 @@ io.on('connection', (socket) => {
     io.to(codigo).emit('mundo-disponivel', { codigo })
   })
 
+  // Um jogador quebrou ou colocou um bloco - repassa pros outros da mesma sala
+  // e atualiza o "mundo" salvo no servidor (pra quem entrar depois já ver certo)
+  socket.on('bloco-alterado', (dados) => {
+    const { codigo, x, y, type } = dados
+    const sala = salas[codigo]
+    if (!sala) return
+    if (socket.data.sala !== codigo) return
+
+    if (sala.mundo && sala.mundo.blocks) {
+      const idx = sala.mundo.blocks.findIndex(b => b.x === x && b.y === y)
+      if (type === null) {
+        if (idx !== -1) sala.mundo.blocks.splice(idx, 1)
+      } else if (idx !== -1) {
+        sala.mundo.blocks[idx].type = type
+      } else {
+        sala.mundo.blocks.push({ x, y, type })
+      }
+    }
+
+    socket.to(codigo).emit('bloco-alterado', { x, y, type })
+  })
+
+  // Um jogador se moveu - repassa a posição pros outros da mesma sala
+  socket.on('jogador-moveu', (dados) => {
+    const { codigo, x, y, dir, nome } = dados
+    if (socket.data.sala !== codigo) return
+    socket.to(codigo).emit('jogador-moveu', { id: socket.id, x, y, dir, nome })
+  })
+
   socket.on('entrar-sala', (dados) => {
     const { codigo, senha, nomeJogador } = dados
     const sala = salas[codigo]
