@@ -49,12 +49,25 @@ io.on('connection', (socket) => {
       senha: senha,
       maxJogadores: maxJogadores,
       modo: modo,
-      jogadores: [{ id: socket.id, nome: nomeCriador }]
+      jogadores: [{ id: socket.id, nome: nomeCriador }],
+      mundo: null // vai ser preenchido pelo criador logo em seguida, via 'enviar-mundo'
     }
 
     socket.join(codigo)
     socket.data.sala = codigo
     socket.emit('sala-criada', { codigo, maxJogadores, modo })
+  })
+
+  // O criador da sala manda o mundo que ele gerou (blocos, planeta, spawn) pra ficar salvo
+  // no servidor, e assim quem entrar depois recebe o MESMO mundo em vez de gerar um aleatório.
+  socket.on('enviar-mundo', (dados) => {
+    const { codigo, mundo } = dados
+    const sala = salas[codigo]
+    if (!sala) return
+    if (socket.data.sala !== codigo) return // só o dono da sala pode definir o mundo
+    sala.mundo = mundo
+    // Se já tiver alguém esperando na sala sem mundo ainda, avisa que já chegou
+    io.to(codigo).emit('mundo-disponivel', { codigo })
   })
 
   socket.on('entrar-sala', (dados) => {
@@ -78,7 +91,8 @@ io.on('connection', (socket) => {
     socket.join(codigo)
     socket.data.sala = codigo
 
-    socket.emit('entrou-na-sala', { codigo, modo: sala.modo })
+    // Manda o mundo do criador junto (se já estiver disponível)
+    socket.emit('entrou-na-sala', { codigo, modo: sala.modo, mundo: sala.mundo })
     io.to(codigo).emit('lista-jogadores', sala.jogadores)
   })
 
